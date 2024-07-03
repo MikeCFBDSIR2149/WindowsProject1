@@ -5,9 +5,9 @@
 
 #define MAX_LOADSTRING 100
 #define IDT_TIMER1 1
-#define PLAYER_SPEED 5
-#define BULLET_SPEED 10
-#define ENEMY_SPEED 2
+#define PLAYER_SPEED 10
+#define BULLET_SPEED 20
+#define ENEMY_SPEED 6
 #define ENEMY_COUNT 5
 #define MAX_BULLETS 100
 #define MAX_ENEMIES 50

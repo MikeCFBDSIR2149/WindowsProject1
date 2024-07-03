@@ -1,8 +1,7 @@
 ﻿#include "framework.h"
 #include "WindowsProject1.h"
-#include <vector>
-#include <algorithm>
-#include <ctime>
+#include <stdlib.h>
+#include <string.h>
 
 #define MAX_LOADSTRING 100
 #define IDT_TIMER1 1
@@ -10,6 +9,8 @@
 #define BULLET_SPEED 10
 #define ENEMY_SPEED 2
 #define ENEMY_COUNT 5
+#define MAX_BULLETS 100
+#define MAX_ENEMIES 50
 
 // 全局变量:
 HINSTANCE hInst;                                // 当前实例
@@ -20,16 +21,18 @@ HBITMAP hbmPlayer, hbmEnemy, hbmBullet;
 RECT clientRect;
 
 int score = 0;
-bool gameOver = false;
+int gameOver = 0;
 
-struct GameObject {
+typedef struct {
     int x, y;
     int width, height;
-};
+} GameObject;
 
 GameObject player;
-std::vector<GameObject> bullets;
-std::vector<GameObject> enemies;
+GameObject bullets[MAX_BULLETS];
+GameObject enemies[MAX_ENEMIES];
+int bullet_count = 0;
+int enemy_count = 0;
 
 // 前向声明:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
@@ -134,7 +137,10 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     }
 
     GetClientRect(hWnd, &clientRect);
-    player = { clientRect.right / 2 - 20, clientRect.bottom - 50, 40, 40 };
+    player.x = clientRect.right / 2 - 20;
+    player.y = clientRect.bottom - 50;
+    player.width = 40;
+    player.height = 40;
 
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
@@ -189,7 +195,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         InvalidateRect(hWnd, NULL, TRUE);
         break;
     case WM_TIMER:
-        if (wParam == IDT_TIMER1) {
+        if (wParam == IDT_TIMER1 && !gameOver) { // 增加 !gameOver 检查
             UpdateGame();
             InvalidateRect(hWnd, NULL, TRUE);
         }
@@ -224,53 +230,71 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 
 void UpdateGame()
 {
-    for (auto& bullet : bullets) {
-        bullet.y -= BULLET_SPEED;
+    int i, j;
+    for (i = 0; i < bullet_count; ++i) {
+        bullets[i].y -= BULLET_SPEED;
     }
-    bullets.erase(std::remove_if(bullets.begin(), bullets.end(), [](GameObject& b) { return b.y < 0; }), bullets.end());
 
-    for (auto& enemy : enemies) {
-        enemy.y += ENEMY_SPEED;
+    // 移除离开屏幕的子弹
+    for (i = 0; i < bullet_count; ) {
+        if (bullets[i].y < 0) {
+            bullets[i] = bullets[--bullet_count];
+        }
+        else {
+            ++i;
+        }
     }
-    enemies.erase(std::remove_if(enemies.begin(), enemies.end(), [](GameObject& e) { return e.y > clientRect.bottom; }), enemies.end());
 
-    // Check for collisions
-    for (auto it = bullets.begin(); it != bullets.end(); ) {
-        bool hit = false;
-        for (auto et = enemies.begin(); et != enemies.end(); ) {
-            if (it->x < et->x + et->width && it->x + it->width > et->x &&
-                it->y < et->y + et->height && it->y + it->height > et->y) {
-                et = enemies.erase(et);
-                hit = true;
+    for (i = 0; i < enemy_count; ++i) {
+        enemies[i].y += ENEMY_SPEED;
+    }
+
+    // 移除离开屏幕的敌人
+    for (i = 0; i < enemy_count; ) {
+        if (enemies[i].y > clientRect.bottom) {
+            enemies[i] = enemies[--enemy_count];
+        }
+        else {
+            ++i;
+        }
+    }
+
+    // 检查子弹和敌人碰撞
+    for (i = 0; i < bullet_count; ) {
+        int hit = 0;
+        for (j = 0; j < enemy_count; ) {
+            if (bullets[i].x < enemies[j].x + enemies[j].width && bullets[i].x + bullets[i].width > enemies[j].x &&
+                bullets[i].y < enemies[j].y + enemies[j].height && bullets[i].y + bullets[i].height > enemies[j].y) {
+                enemies[j] = enemies[--enemy_count];
+                hit = 1;
                 score += 1; // 增加分数
                 break;
             }
             else {
-                ++et;
+                ++j;
             }
         }
         if (hit) {
-            it = bullets.erase(it);
+            bullets[i] = bullets[--bullet_count];
         }
         else {
-            ++it;
+            ++i;
         }
     }
 
     // 检查敌人是否碰到玩家
-    for (auto& enemy : enemies) {
-        if (enemy.x < player.x + player.width && enemy.x + enemy.width > player.x &&
-            enemy.y < player.y + player.height && enemy.y + enemy.height > player.y) {
-            gameOver = true;
+    for (i = 0; i < enemy_count; ++i) {
+        if (enemies[i].x < player.x + player.width && enemies[i].x + enemies[i].width > player.x &&
+            enemies[i].y < player.y + player.height && enemies[i].y + enemies[i].height > player.y) {
+            gameOver = 1;
             return;
         }
     }
 
-    if (enemies.size() < ENEMY_COUNT) {
+    if (enemy_count < ENEMY_COUNT) {
         SpawnEnemies();
     }
 }
-
 
 void DrawGame(HDC hdc)
 {
@@ -291,14 +315,15 @@ void DrawGame(HDC hdc)
     oldBitmap = SelectObject(hdcMem, hbmPlayer);
     BitBlt(hdc, player.x, player.y, player.width, player.height, hdcMem, 0, 0, SRCCOPY);
 
-    for (auto& bullet : bullets) {
+    int i;
+    for (i = 0; i < bullet_count; ++i) {
         SelectObject(hdcMem, hbmBullet);
-        BitBlt(hdc, bullet.x, bullet.y, bullet.width, bullet.height, hdcMem, 0, 0, SRCCOPY);
+        BitBlt(hdc, bullets[i].x, bullets[i].y, bullets[i].width, bullets[i].height, hdcMem, 0, 0, SRCCOPY);
     }
 
-    for (auto& enemy : enemies) {
+    for (i = 0; i < enemy_count; ++i) {
         SelectObject(hdcMem, hbmEnemy);
-        BitBlt(hdc, enemy.x, enemy.y, enemy.width, enemy.height, hdcMem, 0, 0, SRCCOPY);
+        BitBlt(hdc, enemies[i].x, enemies[i].y, enemies[i].width, enemies[i].height, hdcMem, 0, 0, SRCCOPY);
     }
 
     SelectObject(hdcMem, oldBitmap);
@@ -312,17 +337,18 @@ void DrawGame(HDC hdc)
     TextOut(hdc, 10, 10, scoreText, wcslen(scoreText));
 }
 
-
 void FireBullet()
 {
-    GameObject bullet = { player.x + player.width / 2 - 5, player.y - 10, 10, 20 };
-    bullets.push_back(bullet);
+    if (bullet_count < MAX_BULLETS) {
+        GameObject bullet = { player.x + player.width / 2 - 5, player.y - 10, 10, 20 };
+        bullets[bullet_count++] = bullet;
+    }
 }
 
 void SpawnEnemies()
 {
-    while (enemies.size() < ENEMY_COUNT) {
+    while (enemy_count < ENEMY_COUNT) {
         GameObject enemy = { rand() % (clientRect.right - 40), -50, 40, 40 };
-        enemies.push_back(enemy);
+        enemies[enemy_count++] = enemy;
     }
 }

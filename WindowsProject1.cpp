@@ -19,6 +19,9 @@ WCHAR szWindowClass[MAX_LOADSTRING];            // 主窗口类名
 HBITMAP hbmPlayer, hbmEnemy, hbmBullet;
 RECT clientRect;
 
+int score = 0;
+bool gameOver = false;
+
 struct GameObject {
     int x, y;
     int width, height;
@@ -239,6 +242,7 @@ void UpdateGame()
                 it->y < et->y + et->height && it->y + it->height > et->y) {
                 et = enemies.erase(et);
                 hit = true;
+                score += 1; // 增加分数
                 break;
             }
             else {
@@ -253,13 +257,34 @@ void UpdateGame()
         }
     }
 
+    // 检查敌人是否碰到玩家
+    for (auto& enemy : enemies) {
+        if (enemy.x < player.x + player.width && enemy.x + enemy.width > player.x &&
+            enemy.y < player.y + player.height && enemy.y + enemy.height > player.y) {
+            gameOver = true;
+            return;
+        }
+    }
+
     if (enemies.size() < ENEMY_COUNT) {
         SpawnEnemies();
     }
 }
 
+
 void DrawGame(HDC hdc)
 {
+    if (gameOver) {
+        // 绘制游戏结束画面
+        const wchar_t* gameOverText = L"Game Over";
+        SetTextColor(hdc, RGB(255, 0, 0));
+        SetBkMode(hdc, TRANSPARENT);
+        RECT rect;
+        GetClientRect(GetForegroundWindow(), &rect);
+        DrawText(hdc, gameOverText, -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        return;
+    }
+
     HDC hdcMem = CreateCompatibleDC(hdc);
     HGDIOBJ oldBitmap;
 
@@ -278,7 +303,15 @@ void DrawGame(HDC hdc)
 
     SelectObject(hdcMem, oldBitmap);
     DeleteDC(hdcMem);
+
+    // 绘制分数
+    wchar_t scoreText[20];
+    wsprintf(scoreText, L"Score: %d", score);
+    SetTextColor(hdc, RGB(0, 0, 0));
+    SetBkMode(hdc, TRANSPARENT);
+    TextOut(hdc, 10, 10, scoreText, wcslen(scoreText));
 }
+
 
 void FireBullet()
 {

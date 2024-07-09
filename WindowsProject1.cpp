@@ -2,18 +2,20 @@
 #include "WindowsProject1.h"
 #include <stdlib.h>
 #include <string.h>
+#include <windowsx.h>
 
 #define MAX_LOADSTRING 100
 #define IDT_TIMER1 1
 #define PLAYER_SPEED 10
 #define BULLET_SPEED 20
-#define ENEMY_SPEED 6
+// #define ENEMY_SPEED 8
 #define ENEMY_COUNT 5
 #define MAX_BULLETS 100
 #define MAX_ENEMIES 50
 
 // 全局变量:
 HINSTANCE hInst;                                // 当前实例
+HWND hButtonRestart;                            // 重新开始按钮句柄
 WCHAR szTitle[MAX_LOADSTRING];                  // 标题栏文本
 WCHAR szWindowClass[MAX_LOADSTRING];            // 主窗口类名
 
@@ -26,6 +28,7 @@ int gameOver = 0;
 typedef struct {
     int x, y;
     int width, height;
+    int speed;
 } GameObject;
 
 GameObject player;
@@ -158,6 +161,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         int wmId = LOWORD(wParam);
         switch (wmId)
         {
+        case 2: // 重新开始按钮标识符
+            // 重置游戏
+            gameOver = 0;
+            score = 0;
+            bullet_count = 0;
+            enemy_count = 0;
+            player.x = clientRect.right / 2 - 20; // 重置玩家位置
+            player.y = clientRect.bottom - 50;
+            SpawnEnemies();
+            InvalidateRect(hWnd, NULL, TRUE);
+            break;
         case IDM_ABOUT:
             DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
             break;
@@ -180,6 +194,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_KEYDOWN:
         switch (wParam)
         {
+		/*
         case VK_LEFT:
             player.x -= PLAYER_SPEED;
             if (player.x < 0) player.x = 0;
@@ -188,14 +203,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             player.x += PLAYER_SPEED;
             if (player.x + player.width > clientRect.right) player.x = clientRect.right - player.width;
             break;
+        */
         case VK_SPACE:
             FireBullet();
             break;
         }
         InvalidateRect(hWnd, NULL, TRUE);
         break;
+    case WM_MOUSEMOVE:
+    {
+        int xPos = GET_X_LPARAM(lParam); // 获取鼠标的x坐标
+        player.x = xPos - player.width / 2; // 更新玩家的x坐标
+        if (player.x < 0) player.x = 0; // 限制玩家的x坐标不超出左边界
+        if (player.x + player.width > clientRect.right) player.x = clientRect.right - player.width; // 限制玩家的x坐标不超出右边界
+        InvalidateRect(hWnd, NULL, TRUE); // 重新绘制窗口
+    }
+    break;
     case WM_TIMER:
-        if (wParam == IDT_TIMER1 && !gameOver) { // 增加 !gameOver 检查
+        if (wParam == IDT_TIMER1 && !gameOver) {
             UpdateGame();
             InvalidateRect(hWnd, NULL, TRUE);
         }
@@ -246,7 +271,7 @@ void UpdateGame()
     }
 
     for (i = 0; i < enemy_count; ++i) {
-        enemies[i].y += ENEMY_SPEED;
+        enemies[i].y += enemies[i].speed;
     }
 
     // 移除离开屏幕的敌人
@@ -305,8 +330,38 @@ void DrawGame(HDC hdc)
         SetBkMode(hdc, TRANSPARENT);
         RECT rect;
         GetClientRect(GetForegroundWindow(), &rect);
+        rect.top -= 50;
         DrawText(hdc, gameOverText, -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        return;
+
+    	// 绘制得分
+        wchar_t scoreText[50];
+        wsprintf(scoreText, L"Your Score: %d", score);
+        rect.top += 50;
+        DrawText(hdc, scoreText, -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        // 显示重新开始按钮
+        if (!hButtonRestart) {
+            hButtonRestart = CreateWindow(
+                L"BUTTON",
+                L"Restart Game",
+                WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
+                rect.right / 2 - 60, // x 坐标
+                rect.bottom / 2 + 50, // y 坐标
+                120,        // 宽度
+                30,         // 高度
+                GetForegroundWindow(),
+                (HMENU)2,
+                hInst,
+                NULL);
+        }
+
+    	return;
+    }
+
+    // 如果游戏没有结束且按钮存在，销毁按钮
+    if (hButtonRestart) {
+        DestroyWindow(hButtonRestart);
+        hButtonRestart = NULL;
     }
 
     HDC hdcMem = CreateCompatibleDC(hdc);
@@ -348,7 +403,7 @@ void FireBullet()
 void SpawnEnemies()
 {
     while (enemy_count < ENEMY_COUNT) {
-        GameObject enemy = { rand() % (clientRect.right - 40), -50, 40, 40 };
+        GameObject enemy = { rand() % (clientRect.right - 40), -50, 40, 40, rand() % 7 + 6 }; // 速度在6到12之间
         enemies[enemy_count++] = enemy;
     }
 }

@@ -13,6 +13,8 @@
 #define MAX_BULLETS 100
 #define MAX_ENEMIES 80
 #define MAX_ENEMY_BULLETS 500
+#define WINDOW_WIDTH 800
+#define WINDOW_HEIGHT 600
 
 // 全局变量:
 HINSTANCE hInst;                                // 当前实例
@@ -22,6 +24,7 @@ WCHAR szWindowClass[MAX_LOADSTRING];            // 主窗口类名
 
 HBITMAP hbmPlayer, hbmEnemy, hbmBullet, hbmEnemyBullet;
 RECT clientRect;
+int wndWidth = 0;	int wndHeight = 0;  // 窗口尺寸
 
 int score = 0;
 int gameOver = 0;
@@ -126,7 +129,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     hInst = hInstance;
 
     HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, 0, 800, 600, nullptr, nullptr, hInstance, nullptr);
+        CW_USEDEFAULT, 0, WINDOW_WIDTH, WINDOW_HEIGHT, nullptr, nullptr, hInstance, nullptr);
 
     if (!hWnd)
     {
@@ -201,11 +204,32 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
     }
     break;
+    case WM_ERASEBKGND:		// 不擦除背景,避免闪烁
+    {
+        break;
+	}
     case WM_PAINT:
     {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hWnd, &ps);
-        DrawGame(hdc);
+
+        // 以下的步骤是为了避免产生屏幕闪烁,将画面绘制到内存中,一次性拷贝到屏幕上
+        HDC memHDC = CreateCompatibleDC(hdc);
+        RECT rectClient;
+        GetClientRect(hWnd, &rectClient);
+        HBITMAP bmpBuff = CreateCompatibleBitmap(hdc, wndWidth, wndHeight);
+        HBITMAP pOldBMP = (HBITMAP)SelectObject(memHDC, bmpBuff);
+        DrawGame(memHDC);
+
+        //拷贝内存HDC内容到实际HDC
+        BOOL tt = BitBlt(hdc, rectClient.left, rectClient.top, wndWidth,
+            wndHeight, memHDC, rectClient.left, rectClient.top, SRCCOPY);
+
+        //内存回收
+        SelectObject(memHDC, pOldBMP);
+        DeleteObject(bmpBuff);
+        DeleteDC(memHDC);
+
         EndPaint(hWnd, &ps);
     }
     break;
@@ -243,6 +267,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             InvalidateRect(hWnd, NULL, TRUE);
         }
         break;
+    case WM_SIZE:
+	    {
+            wndWidth = LOWORD(lParam);
+            wndHeight = HIWORD(lParam);
+            break;
+	    }
     case WM_DESTROY:
         PostQuitMessage(0);
         break;

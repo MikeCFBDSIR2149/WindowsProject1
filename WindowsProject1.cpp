@@ -9,9 +9,10 @@
 #define PLAYER_SPEED 10
 #define BULLET_SPEED 20
 // #define ENEMY_SPEED 8
-#define ENEMY_COUNT 5
+#define ENEMY_COUNT 6
 #define MAX_BULLETS 100
-#define MAX_ENEMIES 50
+#define MAX_ENEMIES 80
+#define MAX_ENEMY_BULLETS 500
 
 // 全局变量:
 HINSTANCE hInst;                                // 当前实例
@@ -19,7 +20,7 @@ HWND hButtonRestart;                            // 重新开始按钮句柄
 WCHAR szTitle[MAX_LOADSTRING];                  // 标题栏文本
 WCHAR szWindowClass[MAX_LOADSTRING];            // 主窗口类名
 
-HBITMAP hbmPlayer, hbmEnemy, hbmBullet;
+HBITMAP hbmPlayer, hbmEnemy, hbmBullet, hbmEnemyBullet;
 RECT clientRect;
 
 int score = 0;
@@ -29,6 +30,7 @@ typedef struct {
     int x, y;
     int width, height;
     int speed;
+    int fireTimer;
 } GameObject;
 
 GameObject player;
@@ -36,6 +38,15 @@ GameObject bullets[MAX_BULLETS];
 GameObject enemies[MAX_ENEMIES];
 int bullet_count = 0;
 int enemy_count = 0;
+
+typedef struct {
+    int x, y;
+    int width, height;
+    int speed;
+} Bullet;
+
+Bullet enemyBullets[MAX_ENEMY_BULLETS];
+int enemyBullet_count = 0;
 
 // 前向声明:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
@@ -46,6 +57,7 @@ void UpdateGame();
 void DrawGame(HDC hdc);
 void FireBullet();
 void SpawnEnemies();
+void FireEnemyBullet(GameObject enemy);
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     _In_opt_ HINSTANCE hPrevInstance,
@@ -136,6 +148,12 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     hbmBullet = (HBITMAP)LoadImage(hInstance, L"bullet.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
     if (!hbmBullet) {
         MessageBox(hWnd, L"Failed to load bullet.bmp", L"Error", MB_OK | MB_ICONERROR);
+        return FALSE;
+    }
+
+    hbmEnemyBullet = (HBITMAP)LoadImage(hInstance, L"bulletenemy.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
+    if (!hbmEnemyBullet) {
+        MessageBox(hWnd, L"Failed to load bulletenemy.bmp", L"Error", MB_OK | MB_ICONERROR);
         return FALSE;
     }
 
@@ -319,13 +337,53 @@ void UpdateGame()
     if (enemy_count < ENEMY_COUNT) {
         SpawnEnemies();
     }
+
+    // 更新敌人子弹位置
+    for (int i = 0; i < enemyBullet_count; ++i) {
+        enemyBullets[i].y += enemyBullets[i].speed;
+    }
+
+    // 移除离开屏幕的敌人子弹
+    for (int i = 0; i < enemyBullet_count; ) {
+        if (enemyBullets[i].y > clientRect.bottom) {
+            enemyBullets[i] = enemyBullets[--enemyBullet_count];
+        }
+        else {
+            ++i;
+        }
+    }
+
+    // 检查敌人子弹和玩家碰撞
+    for (int i = 0; i < enemyBullet_count; ) {
+        if (enemyBullets[i].x < player.x + player.width && enemyBullets[i].x + enemyBullets[i].width > player.x &&
+            enemyBullets[i].y < player.y + player.height && enemyBullets[i].y + enemyBullets[i].height > player.y) {
+            gameOver = 1;
+            return;
+        }
+        else {
+            ++i;
+        }
+    }
+
+    // 敌人发射子弹逻辑
+    for (i = 0; i < enemy_count; ++i) {
+        enemies[i].fireTimer--;
+        if (enemies[i].fireTimer <= 0) {
+            FireEnemyBullet(enemies[i]);
+            enemies[i].fireTimer = rand() % 20 + 10; // 重置计时器
+        }
+    }
+
+    if (enemy_count < ENEMY_COUNT) {
+        SpawnEnemies();
+    }
 }
 
 void DrawGame(HDC hdc)
 {
     if (gameOver) {
         // 绘制游戏结束画面
-        const wchar_t* gameOverText = L"Game Over";
+        const wchar_t* gameOverText = L"游戏结束";
         SetTextColor(hdc, RGB(255, 0, 0));
         SetBkMode(hdc, TRANSPARENT);
         RECT rect;
@@ -335,7 +393,7 @@ void DrawGame(HDC hdc)
 
     	// 绘制得分
         wchar_t scoreText[50];
-        wsprintf(scoreText, L"Your Score: %d", score);
+        wsprintf(scoreText, L"本局分数: %d", score);
         rect.top += 50;
         DrawText(hdc, scoreText, -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
@@ -343,7 +401,7 @@ void DrawGame(HDC hdc)
         if (!hButtonRestart) {
             hButtonRestart = CreateWindow(
                 L"BUTTON",
-                L"Restart Game",
+                L"重新开始",
                 WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
                 rect.right / 2 - 60, // x 坐标
                 rect.bottom / 2 + 50, // y 坐标
@@ -381,12 +439,17 @@ void DrawGame(HDC hdc)
         BitBlt(hdc, enemies[i].x, enemies[i].y, enemies[i].width, enemies[i].height, hdcMem, 0, 0, SRCCOPY);
     }
 
+    for (i = 0; i < enemyBullet_count; ++i) {
+        SelectObject(hdcMem, hbmEnemyBullet);
+        BitBlt(hdc, enemyBullets[i].x, enemyBullets[i].y, enemyBullets[i].width, enemyBullets[i].height, hdcMem, 0, 0, SRCCOPY);
+    }
+
     SelectObject(hdcMem, oldBitmap);
     DeleteDC(hdcMem);
 
     // 绘制分数
     wchar_t scoreText[20];
-    wsprintf(scoreText, L"Score: %d", score);
+    wsprintf(scoreText, L"分数: %d", score);
     SetTextColor(hdc, RGB(0, 0, 0));
     SetBkMode(hdc, TRANSPARENT);
     TextOut(hdc, 10, 10, scoreText, wcslen(scoreText));
@@ -403,7 +466,20 @@ void FireBullet()
 void SpawnEnemies()
 {
     while (enemy_count < ENEMY_COUNT) {
-        GameObject enemy = { rand() % (clientRect.right - 40), -50, 40, 40, rand() % 7 + 6 }; // 速度在6到12之间
+        GameObject enemy = { rand() % (clientRect.right - 40), -50, 40, 40, rand() % 7 + 6, rand() % 20 }; // 随机初始化计时器
         enemies[enemy_count++] = enemy;
+
+        // 随机决定敌人是否发射子弹
+        if (rand() % 2 == 0) { // 50% 概率发射子弹
+            FireEnemyBullet(enemy);
+        }
+    }
+}
+
+void FireEnemyBullet(GameObject enemy)
+{
+    if (enemyBullet_count < MAX_ENEMY_BULLETS) {
+        Bullet bullet = { enemy.x + enemy.width / 2 - 5, enemy.y + enemy.height, 10, 20, 16 + enemy.speed };
+        enemyBullets[enemyBullet_count++] = bullet;
     }
 }

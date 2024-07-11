@@ -41,6 +41,27 @@ int score = 0;
 int gameOver = 0;
 int highScore = 0; // 最高记录
 
+int playerLives = 3;
+int bulletCooldown = 0; // 添加这行
+const int bulletCooldownTime = 3; // 设置冷却时间，可以根据需要调整
+
+int invincibleTime = 0; // 无敌时间倒计时
+const int manualInvincibleTime = 100; // 手动无敌时间
+const int passiveInvincibleTime = 20; // 被动无敌时间
+int invincibleSkills = 0; // 无敌技能数量
+
+int recoveryTime = 0;
+const int recoveryStartTime = 30;
+int recoverySkills = 0;
+
+int powerShotTime = 0; // 强力技能时间倒计时
+const int powerShotDuration = 150; // 强力技能持续时间
+int powerShotSkills = 0; // 强力技能数量
+
+int clearScreenTime = 0; // 清空技能时间倒计时
+const int clearScreenDuration = 30; // 清空技能持续时间
+int clearScreenSkills = 0; // 清空技能数量
+
 int currentEnemyCount = 2; // 当前敌机上限
 const int maxEnemyCount = 10; // 最大敌机数量
 
@@ -79,7 +100,7 @@ ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
-void UpdateGame();
+void UpdateGame(HWND hWnd);
 void DrawGame(HDC hdc);
 void FireBullet();
 void SpawnEnemies();
@@ -99,6 +120,23 @@ void SaveHighScore() {
         fprintf(file, "%d", highScore);
         fclose(file);
     }
+}
+
+void ShakeWindow(HWND hWnd, int duration, int magnitude) {
+    RECT rect;
+    GetWindowRect(hWnd, &rect);
+    int originalX = rect.left;
+    int originalY = rect.top;
+
+    for (int i = 0; i < duration; ++i) {
+        int offsetX = (rand() % (2 * magnitude)) - magnitude;
+        int offsetY = (rand() % (2 * magnitude)) - magnitude;
+        SetWindowPos(hWnd, nullptr, originalX + offsetX, originalY + offsetY, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+        Sleep(10); // 适当调整休眠时间可以控制抖动速度
+    }
+
+    // 还原到原始位置
+    SetWindowPos(hWnd, nullptr, originalX, originalY, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 }
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
@@ -280,6 +318,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             bullet_count = 0;
             enemy_count = 0;
             currentEnemyCount = 2; // 重置敌机上限
+            playerLives = 3; // 重置玩家生命值
+            invincibleTime = 0;
+            recoveryTime = 0;
+            powerShotTime = 0;
+            clearScreenTime = 0;
             player.x = clientRect.right / 2 - 20; // 重置玩家位置
             player.y = clientRect.bottom - 100;
             SpawnEnemies();
@@ -349,10 +392,39 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             case VK_SPACE:
                 FireBullet();
                 break;
+            case 'I': // 处理I键按下事件
+                if (invincibleSkills > 0) {
+                    invincibleSkills--;
+                    invincibleTime = manualInvincibleTime;
+                }
+                break;
+            case 'R':
+                if (recoverySkills > 0 && playerLives < 3) {
+                    recoverySkills--;
+                    playerLives++;
+                    recoveryTime = recoveryStartTime;
+                }
+                break;
+            case 'P': // 处理P键按下事件
+                if (powerShotSkills > 0 && powerShotTime == 0) {
+                    powerShotSkills--;
+                    powerShotTime = powerShotDuration;
+                }
+                break;
+            case 'C': // 处理C键按下事件
+                if (clearScreenSkills > 0 && clearScreenTime == 0) {
+                    clearScreenSkills--;
+                    clearScreenTime = clearScreenDuration; // 开启清空屏幕状态
+                    ShakeWindow(hWnd, 5, 3); // 在清空屏幕时间内抖动窗口
+                    enemy_count = 0; // 清空所有敌机
+                    enemyBullet_count = 0; // 清空所有敌机子弹
+                }
+                break;
             }
         }
         InvalidateRect(hWnd, NULL, TRUE);
         break;
+
     case WM_MOUSEMOVE:
     {
         int xPos = GET_X_LPARAM(lParam); // 获取鼠标的x坐标
@@ -364,7 +436,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     break;
     case WM_TIMER:
         if (wParam == IDT_TIMER1 && !gameOver) {
-            UpdateGame();
+            UpdateGame(hWnd);
             InvalidateRect(hWnd, NULL, TRUE);
         }
         break;
@@ -404,10 +476,70 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
     return (INT_PTR)FALSE;
 }
 
-void UpdateGame()
+void UpdateGame(HWND hWnd)
 {
     if (showIntro) {
         return;
+    }
+
+    static int skillInvincibleCooldown = 500; // 每隔500帧给予一个无敌技能
+    static int skillRecoveryCooldown = 1000; // 每隔1000帧给予一个恢复技能
+    static int skillPowerShotCooldown = 300; // 每隔300帧给予一个强力技能
+    static int skillClearScreenCooldown = 800; // 每隔1200帧给予一个清空技能
+
+    if (gameOver) {
+        skillInvincibleCooldown = 500;
+        skillRecoveryCooldown = 1000;
+        skillPowerShotCooldown = 300;
+        skillClearScreenCooldown = 800;
+        return;
+    }
+
+    if (bulletCooldown > 0) {
+        bulletCooldown--;
+    }
+
+    // 时间减少
+    if (invincibleTime > 0) {
+        invincibleTime--;
+    }
+
+    if (recoveryTime > 0)
+    {
+        recoveryTime--;
+    }
+
+    if (powerShotTime > 0) {
+        powerShotTime--;
+    }
+
+    if (clearScreenTime > 0) {
+        clearScreenTime--;
+    }
+
+    // 每隔一段时间给予技能
+    skillInvincibleCooldown--;
+    if (skillInvincibleCooldown <= 0) {
+        invincibleSkills++;
+        skillInvincibleCooldown = 500; // 重置技能冷却时间
+    }
+
+    skillRecoveryCooldown--;
+    if (skillRecoveryCooldown <= 0) {
+        recoverySkills++;
+        skillRecoveryCooldown = 1000; // 重置技能冷却时间
+    }
+
+    skillPowerShotCooldown--;
+    if (skillPowerShotCooldown <= 0) {
+        powerShotSkills++;
+        skillPowerShotCooldown = 300; // 重置技能冷却时间
+    }
+
+    skillClearScreenCooldown--;
+    if (skillClearScreenCooldown <= 0) {
+        clearScreenSkills++;
+        skillClearScreenCooldown = 800; // 重置技能冷却时间
     }
 
     int i, j;
@@ -485,40 +617,52 @@ void UpdateGame()
     }
 
     // 检查敌人子弹和玩家碰撞
-    for (i = 0; i < enemyBullet_count; ) {
-        int playerHalfWidth = player.width / 2;
-        int playerHalfHeight = player.height / 2;
-        int playerCenterX = player.x + playerHalfWidth;
-        int playerCenterY = player.y + playerHalfHeight;
+    if (invincibleTime <= 0) { // 当无敌时间为0时才会受到伤害
+        for (i = 0; i < enemyBullet_count; ) {
+            int playerHalfWidth = player.width / 2;
+            int playerHalfHeight = player.height / 2;
+            int playerCenterX = player.x + playerHalfWidth;
+            int playerCenterY = player.y + playerHalfHeight;
 
-        if (enemyBullets[i].x < playerCenterX + playerHalfWidth / 2 && enemyBullets[i].x + enemyBullets[i].width > playerCenterX - playerHalfWidth / 2 &&
-            enemyBullets[i].y < playerCenterY + playerHalfHeight / 2 && enemyBullets[i].y + enemyBullets[i].height > playerCenterY - playerHalfHeight / 2) {
-            gameOver = 1;
-            return;
+            if (enemyBullets[i].x < playerCenterX + playerHalfWidth / 2 && enemyBullets[i].x + enemyBullets[i].width > playerCenterX - playerHalfWidth / 2 &&
+                enemyBullets[i].y < playerCenterY + playerHalfHeight / 2 && enemyBullets[i].y + enemyBullets[i].height > playerCenterY - playerHalfHeight / 2) {
+                playerLives--;
+                ShakeWindow(hWnd, 10, 5);
+                if (playerLives <= 0) {
+                    gameOver = 1;
+                }
+                invincibleTime = passiveInvincibleTime; // 受到伤害后开启无敌时间
+                enemyBullets[i] = enemyBullets[--enemyBullet_count];
+            }
+            else {
+                ++i;
+            }
         }
-        else {
-            ++i;
-        }
-    }
 
-    // 检查敌人是否碰到玩家
-    for (i = 0; i < enemy_count; ++i) {
-        int playerHalfWidth = player.width / 2;
-        int playerHalfHeight = player.height / 2;
-        int playerCenterX = player.x + playerHalfWidth;
-        int playerCenterY = player.y + playerHalfHeight;
+        // 检查敌人是否碰到玩家
+        for (i = 0; i < enemy_count; ++i) {
+            int playerHalfWidth = player.width / 2;
+            int playerHalfHeight = player.height / 2;
+            int playerCenterX = player.x + playerHalfWidth;
+            int playerCenterY = player.y + playerHalfHeight;
 
-        int enemyHalfWidth = enemies[i].width / 2;
-        int enemyHalfHeight = enemies[i].height / 2;
-        int enemyCenterX = enemies[i].x + enemyHalfWidth;
-        int enemyCenterY = enemies[i].y + enemyHalfHeight;
+            int enemyHalfWidth = enemies[i].width / 2;
+            int enemyHalfHeight = enemies[i].height / 2;
+            int enemyCenterX = enemies[i].x + enemyHalfWidth;
+            int enemyCenterY = enemies[i].y + enemyHalfHeight;
 
-        if (enemyCenterX - enemyHalfWidth / 2 < playerCenterX + playerHalfWidth / 2 &&
-            enemyCenterX + enemyHalfWidth / 2 > playerCenterX - playerHalfWidth / 2 &&
-            enemyCenterY - enemyHalfHeight / 2 < playerCenterY + playerHalfHeight / 2 &&
-            enemyCenterY + enemyHalfHeight / 2 > playerCenterY - playerHalfHeight / 2) {
-            gameOver = 1;
-            return;
+            if (enemyCenterX - enemyHalfWidth / 2 < playerCenterX + playerHalfWidth / 2 &&
+                enemyCenterX + enemyHalfWidth / 2 > playerCenterX - playerHalfWidth / 2 &&
+                enemyCenterY - enemyHalfHeight / 2 < playerCenterY + playerHalfHeight / 2 &&
+                enemyCenterY + enemyHalfHeight / 2 > playerCenterY - playerHalfHeight / 2) {
+                playerLives -= 2;
+                ShakeWindow(hWnd, 10, 5);
+                if (playerLives <= 0) {
+                    gameOver = 1;
+                }
+                invincibleTime = passiveInvincibleTime; // 受到伤害后开启无敌时间
+                enemies[i] = enemies[--enemy_count];
+            }
         }
     }
 
@@ -549,10 +693,10 @@ void UpdateGame()
         if (enemies[i].fireTimer <= 0) {
             int playerCenterY = player.y + player.height / 2;
             int enemyCenterY = enemies[i].y + enemies[i].height;
-            if (abs(playerCenterY - enemyCenterY) > 150) { // 如果敌人和玩家之间的 y 距离大于 150 时才发射子弹
+            if (abs(playerCenterY - enemyCenterY) > 150) {
                 FireEnemyBullet(enemies[i]);
             }
-            enemies[i].fireTimer = rand() % 30 + 20; // 重置计时器
+            enemies[i].fireTimer = rand() % 30 + 20;
         }
     }
 
@@ -560,7 +704,6 @@ void UpdateGame()
         SpawnEnemies();
     }
 }
-
 
 
 void DrawGame(HDC hdc)
@@ -590,9 +733,15 @@ void DrawGame(HDC hdc)
             SaveHighScore();
         }
 
+        // 重置无敌技能数
+        invincibleSkills = 0;
+        recoverySkills = 0;
+        powerShotSkills = 0;
+        clearScreenSkills = 0;
+
         // 绘制游戏结束画面
         const wchar_t* gameOverText = L"游戏结束";
-        SetTextColor(hdc, RGB(255, 0, 0));
+        SetTextColor(hdc, RGB(255, 255, 255));
         SetBkMode(hdc, TRANSPARENT);
         RECT rect;
         GetClientRect(GetForegroundWindow(), &rect);
@@ -710,16 +859,101 @@ void DrawGame(HDC hdc)
     SetTextColor(hdc, RGB(255, 255, 255));
     SetBkMode(hdc, TRANSPARENT);
     TextOut(hdc, 10, 10, scoreText, wcslen(scoreText));
+
+    // 绘制生命值
+    wchar_t livesText[20];
+    wsprintf(livesText, L"生命值: %d", playerLives);
+    SetTextColor(hdc, RGB(255, 20, 20));
+    SetBkMode(hdc, TRANSPARENT);
+    TextOut(hdc, clientRect.right - 80, 10, livesText, wcslen(livesText));
+
+    // 绘制无敌技能数量
+    wchar_t invincibleSkillText[20];
+    wsprintf(invincibleSkillText, L"无敌技能数(I): %d", invincibleSkills);
+    SetTextColor(hdc, RGB(255, 255, 0));
+    SetBkMode(hdc, TRANSPARENT);
+    TextOut(hdc, clientRect.right - 120, 30, invincibleSkillText, wcslen(invincibleSkillText));
+
+    // 绘制恢复技能数量
+    wchar_t recoverySkillText[20];
+    wsprintf(recoverySkillText, L"恢复技能数(R): %d", recoverySkills);
+    SetTextColor(hdc, RGB(0, 255, 0));
+    SetBkMode(hdc, TRANSPARENT);
+    TextOut(hdc, clientRect.right - 125, 50, recoverySkillText, wcslen(recoverySkillText));
+
+    // 绘制强力技能数量
+    wchar_t powerShotSkillText[20];
+    wsprintf(powerShotSkillText, L"强力技能数(P): %d", powerShotSkills);
+    SetTextColor(hdc, RGB(120, 120, 255));
+    SetBkMode(hdc, TRANSPARENT);
+    TextOut(hdc, clientRect.right - 125, 70, powerShotSkillText, wcslen(powerShotSkillText));
+
+    // 绘制清空技能数量
+    wchar_t clearScreenSkillText[20];
+    wsprintf(clearScreenSkillText, L"清空技能数(C): %d", clearScreenSkills);
+    SetTextColor(hdc, RGB(255, 40, 255));
+    SetBkMode(hdc, TRANSPARENT);
+    TextOut(hdc, clientRect.right - 125, 90, clearScreenSkillText, wcslen(clearScreenSkillText));
+
+    // 绘制无敌时间
+    if (invincibleTime > 0) {
+        wchar_t invincibleText[20];
+        wsprintf(invincibleText, L"无敌时间");
+        SetTextColor(hdc, RGB(255, 255, 40));
+        SetBkMode(hdc, TRANSPARENT);
+        TextOut(hdc, 10, 30, invincibleText, wcslen(invincibleText));
+    }
+
+    // 绘制恢复生命值
+    if (recoveryTime > 0) {
+        wchar_t recoveryText[20];
+        wsprintf(recoveryText, L"恢复生命值");
+        SetTextColor(hdc, RGB(40, 255, 40));
+        SetBkMode(hdc, TRANSPARENT);
+        TextOut(hdc, 10, 50, recoveryText, wcslen(recoveryText));
+    }
+
+    // 绘制强力时间
+    if (powerShotTime > 0) {
+        wchar_t powerShotText[20];
+        wsprintf(powerShotText, L"强力时间");
+        SetTextColor(hdc, RGB(160, 160, 255));
+        SetBkMode(hdc, TRANSPARENT);
+        TextOut(hdc, 10, 70, powerShotText, wcslen(powerShotText));
+    }
+
+    // 绘制清空屏幕时间
+    if (clearScreenTime > 0) {
+        wchar_t clearScreenText[20];
+        wsprintf(clearScreenText, L"清空屏幕");
+        SetTextColor(hdc, RGB(255, 80, 255));
+        SetBkMode(hdc, TRANSPARENT);
+        TextOut(hdc, 10, 90, clearScreenText, wcslen(clearScreenText));
+    }
 }
 
 
 void FireBullet()
 {
-    if (bullet_count < MAX_BULLETS) {
+    if (bullet_count < MAX_BULLETS && bulletCooldown <= 0) {
         GameObject bullet = { player.x + player.width / 2 - 5, player.y - 10, 10, 20 };
         bullets[bullet_count++] = bullet;
+
+        if (powerShotTime > 0) {
+            if (bullet_count < MAX_BULLETS) {
+                GameObject bulletLeft = { player.x + player.width / 2 - 30, player.y - 10, 10, 20 };
+                bullets[bullet_count++] = bulletLeft;
+            }
+            if (bullet_count < MAX_BULLETS) {
+                GameObject bulletRight = { player.x + player.width / 2 + 20, player.y - 10, 10, 20 };
+                bullets[bullet_count++] = bulletRight;
+            }
+        }
+
+        bulletCooldown = bulletCooldownTime;
     }
 }
+
 
 void SpawnEnemies()
 {

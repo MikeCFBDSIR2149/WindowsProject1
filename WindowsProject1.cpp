@@ -5,7 +5,6 @@
 #include <cstdio>
 #include <ctime>
 #include <stdlib.h>
-#include <string.h>
 #include <windowsx.h>
 #include <mmsystem.h>
 
@@ -43,7 +42,7 @@ int gameOver = 0;
 int highScore = 0; // 最高记录
 
 int currentEnemyCount = 2; // 当前敌机上限
-const int maxEnemyCount = 8; // 最大敌机数量
+const int maxEnemyCount = 10; // 最大敌机数量
 
 int showIntro = 1;
 HBITMAP hbmIntro;
@@ -553,7 +552,7 @@ void UpdateGame()
             if (abs(playerCenterY - enemyCenterY) > 150) { // 如果敌人和玩家之间的 y 距离大于 150 时才发射子弹
                 FireEnemyBullet(enemies[i]);
             }
-            enemies[i].fireTimer = rand() % 40 + 10; // 重置计时器
+            enemies[i].fireTimer = rand() % 30 + 20; // 重置计时器
         }
     }
 
@@ -730,16 +729,16 @@ void SpawnEnemies()
 
         if (enemyType < 40) {
             // 第一类敌人，40%概率
-            enemy = { rand() % (clientRect.right - 100), -100, 100, 100, rand() % 5 + 4, rand() % 40, 2 };
+            enemy = { rand() % (clientRect.right - 100), -100, 100, 100, rand() % 5 + 4, rand() % 20 + 20, 2 };
         }
         else if (enemyType < 80) {
             // 第二类敌人，40%概率
-            enemy = { rand() % (clientRect.right - 100), -100, 100, 100, rand() % 5 + 4, rand() % 40, 1 };
+            enemy = { rand() % (clientRect.right - 100), -100, 100, 100, rand() % 5 + 4, rand() % 20 + 20, 1 };
             enemy.type = 2; // 使用类型标识区分敌人种类
         }
         else {
             // 第三类敌人，20%概率
-            enemy = { rand() % (clientRect.right - 100), -100, 100, 100, rand() % 5 + 4, rand() % 40, 1 };
+            enemy = { rand() % (clientRect.right - 100), -100, 100, 100, rand() % 5 + 4, rand() % 20 + 20, 1 };
             enemy.type = 3; // 使用类型标识区分敌人种类
         }
 

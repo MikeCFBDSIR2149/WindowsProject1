@@ -42,8 +42,8 @@ int gameOver = 0;
 int highScore = 0; // 最高记录
 
 int playerLives = 3;
-int bulletCooldown = 0; // 添加这行
-const int bulletCooldownTime = 3; // 设置冷却时间，可以根据需要调整
+int bulletCooldown = 0;
+const int bulletCooldownTime = 3; // 冷却时间
 
 int invincibleTime = 0; // 无敌时间倒计时
 const int manualInvincibleTime = 100; // 手动无敌时间
@@ -132,7 +132,7 @@ void ShakeWindow(HWND hWnd, int duration, int magnitude) {
         int offsetX = (rand() % (2 * magnitude)) - magnitude;
         int offsetY = (rand() % (2 * magnitude)) - magnitude;
         SetWindowPos(hWnd, nullptr, originalX + offsetX, originalY + offsetY, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-        Sleep(10); // 适当调整休眠时间可以控制抖动速度
+        Sleep(10);
     }
 
     // 还原到原始位置
@@ -792,7 +792,7 @@ void DrawGame(HDC hdc)
                 L"清除最高记录",
                 WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
                 rect.right / 2 - 60, // x 坐标
-                rect.bottom / 2 + 90, // y 坐标，相对于重新开始按钮下移40个单位
+                rect.bottom / 2 + 90, // y 坐标
                 120,        // 宽度
                 30,         // 高度
                 GetForegroundWindow(),
@@ -987,7 +987,6 @@ void SpawnEnemies()
 
 void FireEnemyBullet(GameObject enemy)
 {
-    // 计算方向向量
     int playerCenterX = player.x + player.width / 2;
     int playerCenterY = player.y + player.height / 2;
     int enemyCenterX = enemy.x + enemy.width / 2;
@@ -997,7 +996,6 @@ void FireEnemyBullet(GameObject enemy)
     float deltaY = playerCenterY - enemyCenterY;
     float length = sqrt(deltaX * deltaX + deltaY * deltaY);
 
-    // 归一化方向向量并乘以子弹速度
     float speed = 16.0f; // 子弹速度
     float baseSpeedX = speed * (deltaX / length);
     float baseSpeedY = speed * (deltaY / length);
